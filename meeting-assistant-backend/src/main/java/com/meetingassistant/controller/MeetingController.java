@@ -2,7 +2,9 @@ package com.meetingassistant.controller;
 
 import com.meetingassistant.entity.Meeting;
 import com.meetingassistant.Service.MeetingService;
+
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -18,29 +20,51 @@ public class MeetingController {
         this.meetingService = meetingService;
     }
 
-    // Toplantı kaydetme
+    // Toplantı oluştur
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public Meeting createMeeting(@RequestBody Meeting meeting) {
-        return meetingService.saveMeeting(meeting);
+    public Meeting createMeeting(
+            @RequestBody Meeting meeting,
+            Authentication authentication) {
+
+        return meetingService.saveMeeting(
+                meeting,
+                authentication.getName()
+        );
     }
 
-    // Bütün toplantıları listeleme
+    // Kullanıcının tüm toplantıları
     @GetMapping
-    public List<Meeting> getAllMeetings() {
-        return meetingService.getAllMeetings();
+    public List<Meeting> getAllMeetings(
+            Authentication authentication) {
+
+        return meetingService.getAllMeetings(
+                authentication.getName()
+        );
     }
 
-    // ID ile toplantı getirme
+    // Tek toplantı getir
     @GetMapping("/{id}")
-    public Meeting getMeetingById(@PathVariable Long id) {
-        return meetingService.getMeetingById(id);
+    public Meeting getMeetingById(
+            @PathVariable Long id,
+            Authentication authentication) {
+
+        return meetingService.getMeetingById(
+                id,
+                authentication.getName()
+        );
     }
 
-    // Toplantı silme
+    // Toplantı sil
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void deleteMeeting(@PathVariable Long id) {
-        meetingService.deleteMeeting(id);
+    public void deleteMeeting(
+            @PathVariable Long id,
+            Authentication authentication) {
+
+        meetingService.deleteMeeting(
+                id,
+                authentication.getName()
+        );
     }
 }

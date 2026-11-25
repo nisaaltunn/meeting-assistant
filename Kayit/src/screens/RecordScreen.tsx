@@ -1,5 +1,8 @@
 
 import React, { useEffect, useRef, useState } from 'react';
+import { API_URL } from '../services/api';
+import { useAuth } from '../context/AuthContext';
+
 
 import {
   View,
@@ -24,9 +27,9 @@ import {
 } from 'expo-audio';
 
 import colors from '../theme/colors';
-const API_URL = 'http://192.168.1.104:8080';
 
 export default function RecordScreen() {
+  const { user } = useAuth();
   const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const [audioName, setAudioName] = useState('');
 
@@ -187,16 +190,43 @@ const transcribeAudio = async () => {
       audioFile,
       audioName || 'meeting-recording.m4a'
     );
+    
+    console.log('Token mevcut mu:', !!user?.token);
     const response = await fetch(
       `${API_URL}/api/ai/transcribe`,
       {
         method: 'POST',
+        headers: {
+          Authorization: `Bearer ${user?.token}`,
+        },
         body: formData,
       }
     );
+    const responseText = await response.text();
 
-    const result = await response.json();
-
+    let result: any = {};
+    
+    if (responseText) {
+      try {
+        result = JSON.parse(responseText);
+      } catch {
+        result = { message: responseText };
+      }
+    }
+    
+    if (!response.ok) {
+      throw new Error(
+        `HTTP ${response.status}: ${
+          result.message || 'Sunucudan hata yanıtı alındı.'
+        }`
+      );
+    }
+    
+    if (!result.transcript) {
+      throw new Error('Backend boş bir transkripsiyon yanıtı döndürdü.');
+    }
+    
+    setTranscript(result.transcript);
     if (!response.ok) {
       throw new Error(
         result.message || 'Ses metne dönüştürülemedi.'
