@@ -1,57 +1,31 @@
 
 import React from 'react';
-import {
-  View,
-  ActivityIndicator,
-  StyleSheet,
-} from 'react-native';
-
+import { View, StyleSheet } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 
 import TabNavigator from './src/navigation/TabNavigator';
-import AuthNavigator from './src/navigation/AuthNavigator';
-
-import {
-  AuthProvider,
-  useAuth,
-} from './src/context/AuthContext';
-
-function AppContent() {
-  const { user, isLoading } = useAuth();
-
-  if (isLoading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#6558D3" />
-      </View>
-    );
-  }
-
-  return (
-    <NavigationContainer>
-      {user ? <TabNavigator /> : <AuthNavigator />}
-    </NavigationContainer>
-  );
-}
+import { AuthProvider } from './src/context/AuthContext';
 
 export default function App() {
   return (
     <SafeAreaProvider>
-      <StatusBar style="dark" />
       <AuthProvider>
-        <AppContent />
+        <StatusBar style="dark" />
+        <View style={styles.container}>
+          <NavigationContainer>
+            <TabNavigator />
+          </NavigationContainer>
+        </View>
       </AuthProvider>
     </SafeAreaProvider>
   );
 }
 
 const styles = StyleSheet.create({
-  loadingContainer: {
+  container: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
     backgroundColor: '#F7F7FC',
   },
 });

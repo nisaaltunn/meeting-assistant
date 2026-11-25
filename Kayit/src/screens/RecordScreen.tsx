@@ -191,6 +191,10 @@ const transcribeAudio = async () => {
     Alert.alert('Uyarı', 'Önce bir ses kaydı yapmalısın.');
     return;
   }
+  if (!user?.token) {
+    Alert.alert('Hata', 'Oturum bilgisi bulunamadı.');
+    return;
+  }
 
   
   try {
