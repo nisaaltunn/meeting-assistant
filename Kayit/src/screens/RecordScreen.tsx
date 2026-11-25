@@ -2,16 +2,22 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { API_URL } from '../services/api';
 import { useAuth } from '../context/AuthContext';
-
+import { saveMeeting } from '../services/meetingService';
 
 import {
   View,
   Text,
+  TextInput,
   StyleSheet,
   TouchableOpacity,
   ScrollView,
   Alert,
 } from 'react-native';
+
+import {
+  analyzeMeeting,
+  MeetingAnalysis,
+} from '../services/meetingAnalysisService';
 
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -29,6 +35,11 @@ import {
 import colors from '../theme/colors';
 
 export default function RecordScreen() {
+  const [savedMeetingId, setSavedMeetingId] = useState<number | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysis, setAnalysis] = useState<MeetingAnalysis | null>(null);
+  const [meetingTitle, setMeetingTitle] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
   const { user } = useAuth();
   const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const [audioName, setAudioName] = useState('');
@@ -86,6 +97,8 @@ export default function RecordScreen() {
       setAudioName(selectedFile.name);
       setTranscript('');
       setRecordingTime(0);
+      setSavedMeetingId(null);
+      setAnalysis(null);
   
       Alert.alert(
         'Dosya seçildi',
@@ -127,6 +140,9 @@ export default function RecordScreen() {
 
       setRecordingTime(0);
       setAudioUri(null);
+      setTranscript('');
+      setSavedMeetingId(null);
+      setAnalysis(null);
       setIsRecording(true);
     } catch (error) {
       console.error('Kayıt başlatma hatası:', error);
@@ -176,9 +192,11 @@ const transcribeAudio = async () => {
     return;
   }
 
+  
   try {
     setIsTranscribing(true);
     setTranscript('');
+    
 
     // Telefonun yerel ses dosyasını File nesnesine dönüştür.
     const audioFile = new File(audioUri);
@@ -252,6 +270,94 @@ const transcribeAudio = async () => {
     setIsTranscribing(false);
   }
 };
+
+const handleAnalyzeMeeting = async () => {
+  if (!savedMeetingId) {
+    Alert.alert('Uyarı', 'Önce toplantıyı kaydetmelisin.');
+    return;
+  }
+
+  if (!user?.token) {
+    Alert.alert('Hata', 'Oturum bilgisi bulunamadı.');
+    return;
+  }
+
+  try {
+    setIsAnalyzing(true);
+    setAnalysis(null);
+
+    const result = await analyzeMeeting(
+      savedMeetingId,
+      user.token
+    );
+
+    setAnalysis(result.analysis);
+
+    Alert.alert(
+      'Başarılı',
+      'Toplantı Gemini tarafından analiz edildi.'
+    );
+
+  } catch (error) {
+    console.error('Toplantı analiz hatası:', error);
+
+    Alert.alert(
+      'Analiz Hatası',
+      error instanceof Error
+        ? error.message
+        : 'Toplantı analiz edilemedi.'
+    );
+  } finally {
+    setIsAnalyzing(false);
+  }
+};
+
+const handleSaveMeeting = async () => {
+  if (!transcript.trim()) {
+    Alert.alert('Uyarı', 'Önce ses kaydını metne dönüştürmelisin.');
+    return;
+  }
+
+  if (!meetingTitle.trim()) {
+    Alert.alert('Uyarı', 'Lütfen toplantı başlığını gir.');
+    return;
+  }
+
+  if (!user?.token) {
+    Alert.alert('Hata', 'Oturum bilgisi bulunamadı.');
+    return;
+  }
+
+  try {
+    setIsSaving(true);
+
+    const savedMeeting = await saveMeeting(
+      {
+        title: meetingTitle.trim(),
+        transcript,
+        durationSeconds: recordingTime,
+      },
+      user.token
+    );
+
+    setSavedMeetingId(savedMeeting.id);
+    setAnalysis(null);
+
+    Alert.alert('Başarılı', 'Toplantın başarıyla kaydedildi.');
+    setMeetingTitle('');
+
+  } catch (error) {
+    console.error('Toplantı kaydetme hatası:', error);
+
+    Alert.alert(
+      'Hata',
+      error instanceof Error ? error.message : 'Toplantı kaydedilemedi.'
+    );
+  } finally {
+    setIsSaving(false);
+  }
+};
+
 
 
   const handleRecording = () => {
@@ -379,6 +485,74 @@ const transcribeAudio = async () => {
 )}
 {transcript !== '' && (
   <View style={styles.transcriptCard}>
+    {transcript !== '' && (
+  <View style={styles.saveMeetingCard}>
+    <Text style={styles.saveMeetingTitle}>
+      Toplantıyı Kaydet
+    </Text>
+
+    <Text style={styles.saveMeetingDescription}>
+      Toplantına bir başlık vererek kayıtlarına ekleyebilirsin.
+    </Text>
+
+    <TextInput
+      style={styles.titleInput}
+      placeholder="Örn. Haftalık proje toplantısı"
+      placeholderTextColor={colors.secondaryText}
+      value={meetingTitle}
+      onChangeText={setMeetingTitle}
+    />
+
+    <TouchableOpacity
+      style={[
+        styles.recordButton,
+        {
+          marginTop: 12,
+          opacity: isSaving ? 0.6 : 1,
+        },
+      ]}
+      onPress={handleSaveMeeting}
+      disabled={isSaving}
+    >
+      <Ionicons
+        name="save-outline"
+        size={21}
+        color="#FFFFFF"
+      />
+
+      <Text style={styles.buttonText}>
+        {isSaving ? 'Kaydediliyor...' : 'Toplantıyı Kaydet'}
+      </Text>
+    </TouchableOpacity>
+  </View>
+  
+)}
+
+{savedMeetingId !== null && (
+  <TouchableOpacity
+    style={[
+      styles.recordButton,
+      {
+        marginTop: 12,
+        opacity: isAnalyzing ? 0.6 : 1,
+      },
+    ]}
+    onPress={handleAnalyzeMeeting}
+    disabled={isAnalyzing}
+  >
+    <Ionicons
+      name="sparkles"
+      size={21}
+      color="#FFFFFF"
+    />
+
+    <Text style={styles.buttonText}>
+      {isAnalyzing
+        ? 'Gemini analiz ediyor...'
+        : 'Gemini ile Toplantıyı Analiz Et'}
+    </Text>
+  </TouchableOpacity>
+)}
     <View style={styles.transcriptHeader}>
       <Ionicons
         name="document-text"
@@ -395,7 +569,87 @@ const transcribeAudio = async () => {
       {transcript}
     </Text>
   </View>
+  
 )}
+
+{analysis && (
+  <View style={styles.analysisCard}>
+    <View style={styles.analysisHeader}>
+      <Ionicons
+        name="sparkles"
+        size={23}
+        color={colors.primary}
+      />
+      <Text style={styles.analysisTitle}>
+        Gemini Toplantı Analizi
+      </Text>
+    </View>
+
+    <Text style={styles.analysisSectionTitle}>
+      Toplantı Özeti
+    </Text>
+    <Text style={styles.analysisText}>
+      {analysis.summary}
+    </Text>
+
+    <Text style={styles.analysisSectionTitle}>
+      Alınan Kararlar
+    </Text>
+
+    {analysis.decisions.length > 0 ? (
+      analysis.decisions.map((item, index) => (
+        <Text key={index} style={styles.analysisText}>
+          {index + 1}. {item}
+        </Text>
+      ))
+    ) : (
+      <Text style={styles.analysisText}>
+        Henüz karar bulunamadı.
+      </Text>
+    )}
+
+    <Text style={styles.analysisSectionTitle}>
+      Yapılacak Görevler
+    </Text>
+
+    {analysis.tasks.length > 0 ? (
+      analysis.tasks.map((item, index) => (
+        <View key={index} style={styles.analysisItem}>
+          <Text style={styles.analysisText}>
+            {index + 1}. {item.description}
+          </Text>
+          <Text style={styles.analysisSubText}>
+            Sorumlu: {item.responsiblePerson || 'Belirtilmedi'}
+          </Text>
+          <Text style={styles.analysisSubText}>
+            Son tarih: {item.deadline || 'Belirtilmedi'}
+          </Text>
+        </View>
+      ))
+    ) : (
+      <Text style={styles.analysisText}>
+        Henüz görev bulunamadı.
+      </Text>
+    )}
+
+    <Text style={styles.analysisSectionTitle}>
+      Katılımcılar
+    </Text>
+
+    {analysis.participants.length > 0 ? (
+      analysis.participants.map((item, index) => (
+        <Text key={index} style={styles.analysisText}>
+          {item.speakerLabel}: {item.name || 'İsim belirtilmedi'}
+        </Text>
+      ))
+    ) : (
+      <Text style={styles.analysisText}>
+        Katılımcı bilgisi bulunamadı.
+      </Text>
+    )}
+  </View>
+)}
+
         <View style={styles.uploadSection}>
           <Text style={styles.sectionTitle}>
             Alternatif Yöntem
@@ -645,5 +899,85 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 23,
     color: colors.text,
+  },
+  saveMeetingCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 17,
+    padding: 18,
+    marginTop: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  
+  saveMeetingTitle: {
+    fontSize: 17,
+    fontWeight: 'bold',
+    color: colors.text,
+  },
+  
+  saveMeetingDescription: {
+    fontSize: 13,
+    color: colors.secondaryText,
+    marginTop: 7,
+    marginBottom: 15,
+  },
+  
+  titleInput: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    padding: 14,
+    fontSize: 14,
+    color: colors.text,
+    backgroundColor: colors.background,
+  },
+  analysisCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 17,
+    padding: 18,
+    marginTop: 20,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+
+  analysisHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+    marginBottom: 18,
+  },
+
+  analysisTitle: {
+    fontSize: 17,
+    fontWeight: 'bold',
+    color: colors.text,
+  },
+
+  analysisSectionTitle: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: colors.primary,
+    marginTop: 16,
+    marginBottom: 8,
+  },
+
+  analysisText: {
+    fontSize: 14,
+    lineHeight: 22,
+    color: colors.text,
+    marginBottom: 6,
+  },
+
+  analysisItem: {
+    marginBottom: 12,
+    padding: 12,
+    backgroundColor: colors.background,
+    borderRadius: 12,
+  },
+
+  analysisSubText: {
+    fontSize: 12,
+    color: colors.secondaryText,
+    marginTop: 5,
   },
 });

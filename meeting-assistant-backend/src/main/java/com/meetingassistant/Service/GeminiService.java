@@ -71,6 +71,119 @@ public class GeminiService {
                 .asText();
     }
 
+
+    public JsonNode analyzeMeeting(String transcript) throws Exception {
+
+        if (transcript == null || transcript.isBlank()) {
+            throw new IllegalArgumentException("Toplantı metni boş olamaz.");
+        }
+
+        String prompt = """
+            Sen profesyonel bir toplantı analiz asistanısın.
+            Sana verilen toplantı transkriptini analiz et.
+
+            Sonucu yalnızca geçerli JSON formatında döndür.
+            Markdown veya açıklama ekleme.
+
+            Şu JSON yapısını kullan:
+
+            {
+              "summary": "Toplantının özeti",
+              "decisions": [
+                "Alınan karar 1",
+                "Alınan karar 2"
+              ],
+              "tasks": [
+                {
+                  "description": "Yapılacak görev",
+                  "responsiblePerson": "Sorumlu kişi veya null",
+                  "deadline": "YYYY-MM-DD veya null"
+                }
+              ],
+              "participants": [
+                {
+                  "speakerLabel": "Konuşmacı 1",
+                  "name": null
+                }
+              ]
+            }
+
+            Kurallar:
+            - Özeti Türkçe ve anlaşılır şekilde yaz.
+            - Sadece gerçekten alınmış kararları ekle.
+            - Görevleri açık ve anlaşılır yaz.
+            - Sorumlu kişi belirtilmemişse null kullan.
+            - Tarih belirtilmemişse null kullan.
+            - Konuşmacı isimleri bilinmiyorsa isim uydurma.
+            - Transkriptte açıkça ayırt edilebilen konuşmacıları listele.
+            - Konuşmacılar kesin olarak ayırt edilemiyorsa tahmin yürütme.
+            - Bilgi bulunmayan listeleri boş dizi olarak döndür.
+
+            TOPLANTI TRANSKRİPTİ:
+
+            """ + transcript;
+
+        String url =
+                "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent";
+
+        Map<String, Object> requestBody = Map.of(
+                "contents", List.of(
+                        Map.of(
+                                "parts", List.of(
+                                        Map.of("text", prompt)
+                                )
+                        )
+                ),
+                "generationConfig", Map.of(
+                        "responseMimeType", "application/json"
+                )
+        );
+
+        String jsonBody = objectMapper.writeValueAsString(requestBody);
+
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(url))
+                .header("Content-Type", "application/json")
+                .header("x-goog-api-key", apiKey)
+                .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
+                .build();
+
+        HttpResponse<String> response = httpClient.send(
+                request,
+                HttpResponse.BodyHandlers.ofString()
+        );
+
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            throw new RuntimeException(
+                    "Gemini toplantı analiz hatası (" +
+                            response.statusCode() + "): " + response.body()
+            );
+        }
+
+        JsonNode root = objectMapper.readTree(response.body());
+
+        String analysisText = root.path("candidates")
+                .path(0)
+                .path("content")
+                .path("parts")
+                .path(0)
+                .path("text")
+                .asText();
+
+        if (analysisText.isBlank()) {
+            throw new RuntimeException("Gemini boş analiz yanıtı döndürdü.");
+        }
+
+        JsonNode analysis = objectMapper.readTree(analysisText);
+
+        if (!analysis.isObject() || !analysis.hasNonNull("summary")) {
+            throw new RuntimeException("Gemini geçersiz analiz formatı döndürdü.");
+        }
+
+        return analysis;
+    }
+
+
     public String transcribeAudio(MultipartFile audioFile) throws Exception {
 
         if (audioFile == null || audioFile.isEmpty()) {
