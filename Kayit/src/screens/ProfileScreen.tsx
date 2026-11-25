@@ -5,12 +5,15 @@ import {
   Text,
   StyleSheet,
   ScrollView,
+  Pressable,
+  Alert,
 } from 'react-native';
 
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import colors from '../theme/colors';
+import { useAuth } from '../context/AuthContext';
 
 const settings = [
   { title: 'Hesap Bilgileri', icon: 'person-outline' },
@@ -21,6 +24,32 @@ const settings = [
 ];
 
 export default function ProfileScreen() {
+  const { user, logout } = useAuth();
+
+  const handleLogout = () => {
+    Alert.alert(
+      'Çıkış Yap',
+      'Hesabınızdan çıkış yapmak istediğinize emin misiniz?',
+      [
+        {
+          text: 'Vazgeç',
+          style: 'cancel',
+        },
+        {
+          text: 'Çıkış Yap',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await logout();
+            } catch (error) {
+              Alert.alert('Hata', 'Çıkış yapılırken bir hata oluştu.');
+            }
+          },
+        },
+      ],
+    );
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
@@ -35,8 +64,13 @@ export default function ProfileScreen() {
             />
           </View>
 
-          <Text style={styles.name}>Kullanıcı Adı</Text>
-          <Text style={styles.email}>ornek@email.com</Text>
+          <Text style={styles.name}>
+            {user ? `${user.firstName} ${user.lastName}` : 'Kullanıcı'}
+          </Text>
+
+          <Text style={styles.email}>
+            {user?.email}
+          </Text>
         </View>
 
         <Text style={styles.sectionTitle}>
@@ -62,6 +96,21 @@ export default function ProfileScreen() {
             />
           </View>
         ))}
+
+        <Pressable
+          style={styles.logoutButton}
+          onPress={handleLogout}
+        >
+          <Ionicons
+            name="log-out-outline"
+            size={22}
+            color="#D93636"
+          />
+
+          <Text style={styles.logoutText}>
+            Çıkış Yap
+          </Text>
+        </Pressable>
       </ScrollView>
     </SafeAreaView>
   );
@@ -130,5 +179,20 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontWeight: '500',
   },
+  logoutButton: {
+    backgroundColor: colors.surface,
+    padding: 17,
+    borderRadius: 13,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 13,
+    marginTop: 25,
+    borderWidth: 1,
+    borderColor: '#F2DADA',
+  },
+  logoutText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#D93636',
+  },
 });
-
