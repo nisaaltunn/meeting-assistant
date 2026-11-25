@@ -10,6 +10,8 @@ import ProfileScreen from '../screens/ProfileScreen';
 
 import colors from '../theme/colors';
 
+import MeetingsStack from './MeetingsStack';
+
 const Tab = createBottomTabNavigator();
 
 export default function TabNavigator() {
@@ -75,9 +77,9 @@ export default function TabNavigator() {
       />
 
       <Tab.Screen
-        name="Toplantılar"
-        component={MeetingsScreen}
-      />
+     name="Toplantılar"
+     component={MeetingsStack}
+/>
 
       <Tab.Screen
         name="Profil"

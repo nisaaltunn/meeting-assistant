@@ -3,10 +3,10 @@ import React, { useEffect, useRef, useState } from 'react';
 import { API_URL } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
-
 import {
   View,
   Text,
+  TextInput,
   StyleSheet,
   TouchableOpacity,
   ScrollView,
@@ -28,16 +28,45 @@ import {
 
 import colors from '../theme/colors';
 
-export default function RecordScreen() {
-  const { user } = useAuth();
-  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
-  const [audioName, setAudioName] = useState('');
+const saveMeeting = async (
+  meeting: {
+    title: string;
+    transcript: string;
+    durationSeconds: number;
+  },
+  token: string
+) => {
+  const response = await fetch(`${API_URL}/api/meetings`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(meeting),
+  });
 
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || 'Toplantı kaydedilemedi.');
+  }
+
+  return await response.json();
+};
+
+export default function RecordScreen() {
+  const [meetingTitle, setMeetingTitle] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const { user } = useAuth();
+
+  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+
+  const [audioName, setAudioName] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [audioUri, setAudioUri] = useState<string | null>(null);
 
   const startTimeRef = useRef<number | null>(null);
+
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [transcript, setTranscript] = useState('');
 
@@ -68,6 +97,8 @@ export default function RecordScreen() {
       .map((value) => String(value).padStart(2, '0'))
       .join(':');
   };
+
+  // Ses dosyası seç
   const pickAudioFile = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -75,32 +106,32 @@ export default function RecordScreen() {
         copyToCacheDirectory: true,
         multiple: false,
       });
-  
+
       if (result.canceled) {
         return;
       }
-  
+
       const selectedFile = result.assets[0];
-  
+
       setAudioUri(selectedFile.uri);
       setAudioName(selectedFile.name);
       setTranscript('');
       setRecordingTime(0);
-  
+
       Alert.alert(
         'Dosya seçildi',
         `${selectedFile.name} başarıyla seçildi.`
       );
-  
     } catch (error) {
       console.error('Dosya seçme hatası:', error);
-  
+
       Alert.alert(
         'Hata',
         'Ses dosyası seçilemedi.'
       );
     }
   };
+
   // Kaydı başlat
   const startRecording = async () => {
     try {
@@ -127,6 +158,7 @@ export default function RecordScreen() {
 
       setRecordingTime(0);
       setAudioUri(null);
+      setTranscript('');
       setIsRecording(true);
     } catch (error) {
       console.error('Kayıt başlatma hatası:', error);
@@ -169,91 +201,154 @@ export default function RecordScreen() {
     }
   };
 
-  
-const transcribeAudio = async () => {
-  if (!audioUri) {
-    Alert.alert('Uyarı', 'Önce bir ses kaydı yapmalısın.');
-    return;
-  }
+  // Ses dosyasını metne dönüştür
+  const transcribeAudio = async () => {
+    if (!audioUri) {
+      Alert.alert('Uyarı', 'Önce bir ses kaydı yapmalısın.');
+      return;
+    }
 
-  try {
-    setIsTranscribing(true);
-    setTranscript('');
+    if (!user?.token) {
+      Alert.alert('Hata', 'Oturum bilgisi bulunamadı.');
+      return;
+    }
 
-    // Telefonun yerel ses dosyasını File nesnesine dönüştür.
-    const audioFile = new File(audioUri);
+    try {
+      setIsTranscribing(true);
+      setTranscript('');
 
-    // Dosyayı multipart/form-data olarak hazırla.
-    const formData = new FormData();
-    formData.append(
-      'file',
-      audioFile,
-      audioName || 'meeting-recording.m4a'
-    );
-    
-    console.log('Token mevcut mu:', !!user?.token);
-    const response = await fetch(
-      `${API_URL}/api/ai/transcribe`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${user?.token}`,
+      const audioFile = new File(audioUri);
+
+      const formData = new FormData();
+
+      formData.append(
+        'file',
+        audioFile,
+        audioName || 'meeting-recording.m4a'
+      );
+
+      console.log('Token mevcut mu:', !!user?.token);
+
+      const response = await fetch(
+        `${API_URL}/api/ai/transcribe`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${user.token}`,
+          },
+          body: formData,
+        }
+      );
+
+      const responseText = await response.text();
+
+      let result: any = {};
+
+      if (responseText) {
+        try {
+          result = JSON.parse(responseText);
+        } catch {
+          result = { message: responseText };
+        }
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          `HTTP ${response.status}: ${
+            result.message || 'Sunucudan hata yanıtı alındı.'
+          }`
+        );
+      }
+
+      if (!result.transcript) {
+        throw new Error(
+          'Backend boş bir transkripsiyon yanıtı döndürdü.'
+        );
+      }
+
+      setTranscript(result.transcript);
+
+    } catch (error) {
+      console.error('Transkripsiyon hatası:', error);
+
+      Alert.alert(
+        'Dönüştürme hatası',
+        error instanceof Error
+          ? error.message
+          : 'Bir hata oluştu.'
+      );
+    } finally {
+      setIsTranscribing(false);
+    }
+  };
+
+  // Toplantıyı kaydet
+  const handleSaveMeeting = async () => {
+    if (!transcript.trim()) {
+      Alert.alert(
+        'Uyarı',
+        'Önce ses kaydını metne dönüştürmelisin.'
+      );
+      return;
+    }
+
+    if (!meetingTitle.trim()) {
+      Alert.alert(
+        'Uyarı',
+        'Lütfen toplantı başlığını gir.'
+      );
+      return;
+    }
+
+    if (!user?.token) {
+      Alert.alert(
+        'Hata',
+        'Oturum bilgisi bulunamadı.'
+      );
+      return;
+    }
+
+    try {
+      setIsSaving(true);
+
+      const result = await saveMeeting(
+        {
+          title: meetingTitle.trim(),
+          transcript,
+          durationSeconds: recordingTime,
         },
-        body: formData,
-      }
-    );
-    const responseText = await response.text();
-
-    let result: any = {};
-    
-    if (responseText) {
-      try {
-        result = JSON.parse(responseText);
-      } catch {
-        result = { message: responseText };
-      }
-    }
-    
-    if (!response.ok) {
-      throw new Error(
-        `HTTP ${response.status}: ${
-          result.message || 'Sunucudan hata yanıtı alındı.'
-        }`
+        user.token
       );
-    }
-    
-    if (!result.transcript) {
-      throw new Error('Backend boş bir transkripsiyon yanıtı döndürdü.');
-    }
-    
-    setTranscript(result.transcript);
-    if (!response.ok) {
-      throw new Error(
-        result.message || 'Ses metne dönüştürülemedi.'
+
+      if (result.updated) {
+        Alert.alert(
+          'Toplantı Güncellendi',
+          result.message
+        );
+      } else {
+        Alert.alert(
+          'Başarılı',
+          result.message
+        );
+      }
+
+      setMeetingTitle('');
+
+    } catch (error) {
+      console.error('Toplantı kaydetme hatası:', error);
+
+      Alert.alert(
+        'Hata',
+        error instanceof Error
+          ? error.message
+          : 'Toplantı kaydedilemedi.'
       );
+    } finally {
+      setIsSaving(false);
     }
+  };
 
-    if (!result.transcript) {
-      throw new Error('Gemini boş bir yanıt döndürdü.');
-    }
-
-    setTranscript(result.transcript);
-
-  } catch (error) {
-    console.error('Transkripsiyon hatası:', error);
-
-    Alert.alert(
-      'Dönüştürme hatası',
-      error instanceof Error
-        ? error.message
-        : 'Bir hata oluştu.'
-    );
-  } finally {
-    setIsTranscribing(false);
-  }
-};
-
-
+  // Kayıt butonu
   const handleRecording = () => {
     if (isRecording) {
       stopRecording();
@@ -351,51 +446,94 @@ const transcribeAudio = async () => {
             </View>
           </View>
         )}
-{audioUri && (
-  <TouchableOpacity
-    style={[
-      styles.recordButton,
-      {
-        marginTop: 15,
-        opacity: isTranscribing ? 0.6 : 1,
-      },
-    ]}
-    activeOpacity={0.8}
-    onPress={transcribeAudio}
-    disabled={isTranscribing}
-  >
-    <Ionicons
-      name="document-text-outline"
-      size={22}
-      color="#FFFFFF"
-    />
 
-    <Text style={styles.buttonText}>
-      {isTranscribing
-        ? 'Konuşma metne çevriliyor...'
-        : 'Gemini ile Metne Dönüştür'}
-    </Text>
-  </TouchableOpacity>
-)}
-{transcript !== '' && (
-  <View style={styles.transcriptCard}>
-    <View style={styles.transcriptHeader}>
-      <Ionicons
-        name="document-text"
-        size={22}
-        color={colors.primary}
-      />
+        {audioUri && (
+          <TouchableOpacity
+            style={[
+              styles.recordButton,
+              {
+                marginTop: 15,
+                opacity: isTranscribing ? 0.6 : 1,
+              },
+            ]}
+            activeOpacity={0.8}
+            onPress={transcribeAudio}
+            disabled={isTranscribing}
+          >
+            <Ionicons
+              name="document-text-outline"
+              size={22}
+              color="#FFFFFF"
+            />
 
-      <Text style={styles.transcriptTitle}>
-        Konuşma Metni
-      </Text>
-    </View>
+            <Text style={styles.buttonText}>
+              {isTranscribing
+                ? 'Konuşma metne çevriliyor...'
+                : 'Gemini ile Metne Dönüştür'}
+            </Text>
+          </TouchableOpacity>
+        )}
 
-    <Text style={styles.transcriptText}>
-      {transcript}
-    </Text>
-  </View>
-)}
+        {transcript !== '' && (
+          <View style={styles.transcriptCard}>
+            <View style={styles.saveMeetingCard}>
+              <Text style={styles.saveMeetingTitle}>
+                Toplantıyı Kaydet
+              </Text>
+
+              <Text style={styles.saveMeetingDescription}>
+                Toplantına bir başlık vererek kayıtlarına ekleyebilirsin.
+              </Text>
+
+              <TextInput
+                style={styles.titleInput}
+                placeholder="Örn. Haftalık proje toplantısı"
+                placeholderTextColor={colors.secondaryText}
+                value={meetingTitle}
+                onChangeText={setMeetingTitle}
+              />
+
+              <TouchableOpacity
+                style={[
+                  styles.recordButton,
+                  {
+                    marginTop: 12,
+                    opacity: isSaving ? 0.6 : 1,
+                  },
+                ]}
+                onPress={handleSaveMeeting}
+                disabled={isSaving}
+              >
+                <Ionicons
+                  name="save-outline"
+                  size={21}
+                  color="#FFFFFF"
+                />
+
+                <Text style={styles.buttonText}>
+                  {isSaving ? 'Kaydediliyor...' : 'Toplantıyı Kaydet'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.transcriptHeader}>
+              <Ionicons
+                name="document-text"
+                size={22}
+                color={colors.primary}
+              />
+
+              <Text style={styles.transcriptTitle}>
+                Konuşma Metni
+              </Text>
+            </View>
+
+            <Text style={styles.transcriptText}>
+              {transcript}
+            </Text>
+          </View>
+        )}
+
         <View style={styles.uploadSection}>
           <Text style={styles.sectionTitle}>
             Alternatif Yöntem
@@ -627,23 +765,48 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  
   transcriptHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 9,
     marginBottom: 14,
   },
-  
   transcriptTitle: {
     fontSize: 16,
     fontWeight: 'bold',
     color: colors.text,
   },
-  
   transcriptText: {
     fontSize: 14,
     lineHeight: 23,
     color: colors.text,
+  },
+  saveMeetingCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 17,
+    padding: 18,
+    marginTop: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  saveMeetingTitle: {
+    fontSize: 17,
+    fontWeight: 'bold',
+    color: colors.text,
+  },
+  saveMeetingDescription: {
+    fontSize: 13,
+    color: colors.secondaryText,
+    marginTop: 7,
+    marginBottom: 15,
+  },
+  titleInput: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    padding: 14,
+    fontSize: 14,
+    color: colors.text,
+    backgroundColor: colors.background,
   },
 });

@@ -1,9 +1,10 @@
+
 package com.meetingassistant.controller;
 
 import com.meetingassistant.entity.Meeting;
 import com.meetingassistant.Service.MeetingService;
+import com.meetingassistant.dto.MeetingSaveResponse;
 
-import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
@@ -20,10 +21,9 @@ public class MeetingController {
         this.meetingService = meetingService;
     }
 
-    // Toplantı oluştur
+    // Toplantı oluştur veya mevcut toplantıyı güncelle
     @PostMapping
-    @ResponseStatus(HttpStatus.CREATED)
-    public Meeting createMeeting(
+    public MeetingSaveResponse createMeeting(
             @RequestBody Meeting meeting,
             Authentication authentication) {
 
@@ -57,7 +57,6 @@ public class MeetingController {
 
     // Toplantı sil
     @DeleteMapping("/{id}")
-    @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteMeeting(
             @PathVariable Long id,
             Authentication authentication) {
