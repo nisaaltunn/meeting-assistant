@@ -15,25 +15,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import colors from '../theme/colors';
 
 export default function HomeScreen({ navigation }: any) {
-  const meetings = [
-    {
-      id: 1,
-      title: 'Proje toplantısı',
-      date: '18 Kasım 2026',
-      duration: '35 dk',
-      icon: 'people-outline',
-      status: 'Tamamlandı',
-    },
-    {
-      id: 2,
-      title: 'Ders çalışma notları',
-      date: '17 Kasım 2026',
-      duration: '22 dk',
-      icon: 'book-outline',
-      status: 'Tamamlandı',
-    },
-  ];
-
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView
@@ -210,70 +191,47 @@ export default function HomeScreen({ navigation }: any) {
           </TouchableOpacity>
         </View>
 
-        {/* RECENT MEETINGS */}
-        <View style={styles.recentHeader}>
-          <Text style={styles.sectionTitle}>
-            Son Toplantılar
-          </Text>
-
-          <TouchableOpacity
-            activeOpacity={0.7}
-            onPress={() => navigation.navigate('Toplantılar')}
-          >
-            <Text style={styles.seeAll}>
-              Tümünü gör
+        {/* MEETINGS BUTTON */}
+        <TouchableOpacity
+          style={styles.meetingsCard}
+          activeOpacity={0.8}
+          onPress={() => navigation.navigate('Toplantılar')}
+        >
+          <View style={styles.meetingsContent}>
+            <View style={styles.meetingsIcon}>
               <Ionicons
-                name="chevron-forward"
-                size={13}
+                name="folder-open"
+                size={27}
                 color={colors.primary}
               />
+            </View>
+
+            <View style={styles.meetingsInfo}>
+              <Text style={styles.meetingsTitle}>
+                Toplantılarım
+              </Text>
+
+              <Text style={styles.meetingsDescription}>
+                Tüm kayıtlarını ve toplantı notlarını
+                tek bir yerde görüntüle.
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.meetingsDivider} />
+
+          <View style={styles.meetingsFooter}>
+            <Text style={styles.meetingsLink}>
+              Toplantılarımı görüntüle
             </Text>
-          </TouchableOpacity>
-        </View>
-
-        {meetings.map((meeting) => (
-          <TouchableOpacity
-            key={meeting.id}
-            style={styles.meetingCard}
-            activeOpacity={0.75}
-            onPress={() => navigation.navigate('Toplantılar')}
-          >
-            <View style={styles.meetingIcon}>
-              <Ionicons
-                name={meeting.icon as any}
-                size={23}
-                color={colors.primary}
-              />
-            </View>
-
-            <View style={styles.meetingInfo}>
-              <Text style={styles.meetingTitle}>
-                {meeting.title}
-              </Text>
-
-              <Text style={styles.meetingDate}>
-                {meeting.date} · {meeting.duration}
-              </Text>
-
-              <View style={styles.completedBadge}>
-                <Ionicons
-                  name="checkmark-circle"
-                  size={12}
-                  color="#269B70"
-                />
-                <Text style={styles.completedText}>
-                  {meeting.status}
-                </Text>
-              </View>
-            </View>
 
             <Ionicons
-              name="chevron-forward"
-              size={20}
-              color={colors.secondaryText}
+              name="arrow-forward"
+              size={18}
+              color={colors.primary}
             />
-          </TouchableOpacity>
-        ))}
+          </View>
+        </TouchableOpacity>
 
         {/* FOOTER */}
         <View style={styles.footer}>
@@ -497,66 +455,69 @@ const styles = StyleSheet.create({
     marginTop: 5,
   },
 
-  recentHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-
-  seeAll: {
-    color: colors.primary,
-    fontSize: 12,
-    fontWeight: 'bold',
-    marginBottom: 14,
-  },
-
-  meetingCard: {
+  // TOPLANTILAR KARTI
+  meetingsCard: {
     backgroundColor: colors.surface,
-    borderRadius: 17,
-    padding: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 11,
+    borderRadius: 20,
+    padding: 18,
+    marginBottom: 20,
     borderWidth: 1,
     borderColor: colors.border,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
   },
 
-  meetingIcon: {
-    width: 46,
-    height: 46,
-    borderRadius: 14,
+  meetingsContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  meetingsIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 17,
     backgroundColor: colors.primaryLight,
     justifyContent: 'center',
     alignItems: 'center',
   },
 
-  meetingInfo: {
+  meetingsInfo: {
     flex: 1,
-    marginLeft: 12,
+    marginLeft: 14,
   },
 
-  meetingTitle: {
+  meetingsTitle: {
     color: colors.text,
-    fontSize: 13,
+    fontSize: 17,
     fontWeight: 'bold',
   },
 
-  meetingDate: {
+  meetingsDescription: {
     color: colors.secondaryText,
-    fontSize: 10,
+    fontSize: 12,
+    lineHeight: 18,
     marginTop: 5,
   },
 
-  completedBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 7,
+  meetingsDivider: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginTop: 17,
   },
 
-  completedText: {
-    color: '#269B70',
-    fontSize: 10,
+  meetingsFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 14,
+  },
+
+  meetingsLink: {
+    color: colors.primary,
+    fontSize: 13,
     fontWeight: '600',
   },
 

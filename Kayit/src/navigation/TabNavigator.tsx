@@ -6,7 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import HomeScreen from '../screens/HomeScreen';
 import RecordScreen from '../screens/RecordScreen';
 import MeetingsScreen from '../screens/MeetingsScreen';
-import ProfileScreen from '../screens/ProfileScreen';
+import ProfileStack from './ProfileStack';
 
 import colors from '../theme/colors';
 
@@ -82,9 +82,9 @@ export default function TabNavigator() {
 />
 
       <Tab.Screen
-        name="Profil"
-        component={ProfileScreen}
-      />
+    name="Profil"
+    component={ProfileStack}
+  />
     </Tab.Navigator>
   );
 }

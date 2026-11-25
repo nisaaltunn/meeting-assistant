@@ -1,4 +1,5 @@
 
+import * as Clipboard from 'expo-clipboard';
 import React, { useEffect, useState } from 'react';
 import {
   View,
@@ -7,6 +8,7 @@ import {
   ScrollView,
   ActivityIndicator,
   Pressable,
+  Alert,
 } from 'react-native';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -93,6 +95,11 @@ export default function MeetingDetailScreen() {
       : `${minutes} dk ${remainingSeconds} sn`;
   };
 
+  const copyText = async (text: string) => {
+    await Clipboard.setStringAsync(text);
+    Alert.alert('Kopyalandı', 'Metin panoya kopyalandı.');
+  };
+
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
@@ -145,7 +152,9 @@ export default function MeetingDetailScreen() {
             />
           </View>
 
-          <Text style={styles.title}>{meeting.title}</Text>
+          <Text style={styles.title}>
+            {meeting.title}
+          </Text>
 
           <View style={styles.metaRow}>
             <Ionicons
@@ -153,7 +162,7 @@ export default function MeetingDetailScreen() {
               size={17}
               color={colors.secondaryText}
             />
-            <Text style={styles.metaText}>
+            <Text selectable style={styles.metaText}>
               {formatDate(meeting.createdAt)}
             </Text>
           </View>
@@ -164,7 +173,7 @@ export default function MeetingDetailScreen() {
               size={17}
               color={colors.secondaryText}
             />
-            <Text style={styles.metaText}>
+            <Text selectable style={styles.metaText}>
               {formatDuration(meeting.durationSeconds)}
             </Text>
           </View>
@@ -173,6 +182,23 @@ export default function MeetingDetailScreen() {
         <Text style={styles.sectionTitle}>Toplantı Transkripti</Text>
 
         <View style={styles.transcriptCard}>
+          <View style={styles.transcriptHeader}>
+            <Text style={styles.transcriptLabel}>
+              Transkript Metni
+            </Text>
+
+            <Pressable
+              onPress={() => copyText(meeting.transcript || '')}
+              disabled={!meeting.transcript}
+            >
+              <Ionicons
+                name="copy-outline"
+                size={21}
+                color={colors.primary}
+              />
+            </Pressable>
+          </View>
+
           <Text style={styles.transcript}>
             {meeting.transcript || 'Bu toplantı için transkript bulunmuyor.'}
           </Text>
@@ -258,6 +284,17 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 25,
     color: colors.text,
+  },
+  transcriptHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 15,
+  },
+  transcriptLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.secondaryText,
   },
   loader: {
     marginTop: 50,

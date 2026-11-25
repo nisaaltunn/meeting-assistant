@@ -34,8 +34,15 @@ public class SecurityConfig {
                 )
 
                 .authorizeHttpRequests(auth -> auth
+                        .requestMatchers(
+                                HttpMethod.PUT,
+                                "/api/auth/change-password"
+                        ).authenticated()
+
                         .requestMatchers("/api/auth/**").permitAll()
+
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+
                         .anyRequest().authenticated()
                 )
 

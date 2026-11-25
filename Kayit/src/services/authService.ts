@@ -58,3 +58,55 @@ export async function register(
 
   return result;
 }
+
+export async function updateProfile(
+  data: { firstName: string; lastName: string },
+  token: string
+): Promise<AuthResponse> {
+  const response = await fetch(`${API_URL}/api/auth/profile`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(data),
+  });
+
+  const result = await response.json();
+
+  if (!response.ok) {
+    throw new Error(result.message || 'Profil güncellenemedi.');
+  }
+
+  return result;
+}
+
+export async function changePassword(
+  data: {
+    currentPassword: string;
+    newPassword: string;
+  },
+  token: string
+): Promise<void> {
+  const response = await fetch(`${API_URL}/api/auth/change-password`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    let message = 'Şifre değiştirilemedi.';
+
+    try {
+      const result = await response.json();
+      message = result.message || message;
+    } catch {
+      // Sunucu yanıtında JSON mesajı yoksa varsayılan mesaj kullanılır.
+    }
+
+    throw new Error(message);
+  }
+}

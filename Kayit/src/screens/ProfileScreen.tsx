@@ -17,14 +17,22 @@ import { useAuth } from '../context/AuthContext';
 
 const settings = [
   { title: 'Hesap Bilgileri', icon: 'person-outline' },
-  { title: 'Bildirimler', icon: 'notifications-outline' },
-  { title: 'Dil ve Görünüm', icon: 'color-palette-outline' },
   { title: 'Gizlilik ve Güvenlik', icon: 'shield-checkmark-outline' },
   { title: 'Yardım ve Destek', icon: 'help-circle-outline' },
 ];
 
-export default function ProfileScreen() {
+export default function ProfileScreen({ navigation }: any) {
   const { user, logout } = useAuth();
+
+  const handleSettingPress = (title: string) => {
+  if (title === 'Hesap Bilgileri') {
+    navigation.navigate('AccountInfo');
+  } else if (title === 'Gizlilik ve Güvenlik') {
+    navigation.navigate('PrivacySecurity');
+  } else if (title === 'Yardım ve Destek') {
+    navigation.navigate('HelpSupport');
+  }
+};
 
   const handleLogout = () => {
     Alert.alert(
@@ -73,12 +81,14 @@ export default function ProfileScreen() {
           </Text>
         </View>
 
-        <Text style={styles.sectionTitle}>
-          Ayarlar
-        </Text>
+        <Text style={styles.sectionTitle}>Ayarlar</Text>
 
         {settings.map((item, index) => (
-          <View style={styles.setting} key={index}>
+          <Pressable
+            style={styles.setting}
+            key={index}
+            onPress={() => handleSettingPress(item.title)}
+          >
             <Ionicons
               name={item.icon as any}
               size={22}
@@ -94,7 +104,7 @@ export default function ProfileScreen() {
               size={19}
               color={colors.secondaryText}
             />
-          </View>
+          </Pressable>
         ))}
 
         <Pressable
@@ -107,9 +117,7 @@ export default function ProfileScreen() {
             color="#D93636"
           />
 
-          <Text style={styles.logoutText}>
-            Çıkış Yap
-          </Text>
+          <Text style={styles.logoutText}>Çıkış Yap</Text>
         </Pressable>
       </ScrollView>
     </SafeAreaView>

@@ -1,5 +1,6 @@
 
 package com.meetingassistant.Service;
+import com.meetingassistant.dto.ProfileUpdateRequest;
 
 import com.meetingassistant.dto.AuthResponse;
 import com.meetingassistant.dto.LoginRequest;
@@ -10,6 +11,7 @@ import com.meetingassistant.repository.UserRepository;
 
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import com.meetingassistant.dto.ChangePasswordRequest;
 
 @Service
 public class AuthService {
@@ -113,5 +115,68 @@ public class AuthService {
                 user.getEmail(),
                 token
         );
+    }
+
+
+    // Kullanıcı profil bilgilerini güncelle
+    public AuthResponse updateProfile(
+            ProfileUpdateRequest request,
+            String email) {
+
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Kullanıcı bulunamadı."
+                ));
+
+        if (request.getFirstName() == null ||
+                request.getFirstName().isBlank() ||
+                request.getLastName() == null ||
+                request.getLastName().isBlank()) {
+
+            throw new IllegalArgumentException(
+                    "Ad ve soyad boş bırakılamaz."
+            );
+        }
+
+        user.setFirstName(request.getFirstName().trim());
+        user.setLastName(request.getLastName().trim());
+
+        User updatedUser = userRepository.save(user);
+
+        String token = jwtService.generateToken(updatedUser.getEmail());
+
+        return new AuthResponse(
+                updatedUser.getId(),
+                updatedUser.getFirstName(),
+                updatedUser.getLastName(),
+                updatedUser.getEmail(),
+                token
+        );
+    }
+    public void changePassword(ChangePasswordRequest request, String email) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new IllegalArgumentException("Kullanıcı bulunamadı."));
+
+        if (request.getCurrentPassword() == null ||
+                request.getCurrentPassword().isBlank() ||
+                request.getNewPassword() == null ||
+                request.getNewPassword().isBlank()) {
+            throw new IllegalArgumentException("Tüm şifre alanları zorunludur.");
+        }
+
+        if (request.getNewPassword().length() < 8) {
+            throw new IllegalArgumentException("Yeni şifre en az 8 karakter olmalıdır.");
+        }
+
+        if (!passwordEncoder.matches(request.getCurrentPassword(), user.getPassword())) {
+            throw new IllegalArgumentException("Mevcut şifreniz hatalı.");
+        }
+
+        if (request.getCurrentPassword().equals(request.getNewPassword())) {
+            throw new IllegalArgumentException("Yeni şifreniz mevcut şifrenizden farklı olmalıdır.");
+        }
+
+        user.setPassword(passwordEncoder.encode(request.getNewPassword()));
+        userRepository.save(user);
     }
 }
