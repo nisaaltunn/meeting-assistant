@@ -207,6 +207,12 @@ public class GeminiService {
             mimeType = "audio/mp4";
         }
 
+        if (fileName != null && fileName.toLowerCase().endsWith(".m4a")) {
+            mimeType = "audio/mp4";
+        } else if (fileName != null && fileName.toLowerCase().endsWith(".wav")) {
+            mimeType = "audio/wav";
+        }
+
         if (mimeType == null || !mimeType.startsWith("audio/")) {
             throw new IllegalArgumentException(
                     "Geçerli bir ses dosyası gönderilmelidir. Gelen tür: " + mimeType
@@ -223,15 +229,40 @@ public class GeminiService {
                 )
         );
 
-        Map<String, Object> textPart = Map.of(
-                "text", "Bu ses kaydındaki konuşmayı Türkçe olarak eksiksiz şekilde metne dönüştür. Sadece konuşma metnini döndür."
-        );
+        String promptText = """
+                Bu ses kaydındaki konuşmaları Türkçe olarak metne dönüştür ve farklı konuşmacıları ayırt et.
+                Sonucu yalnızca geçerli bir JSON dizisi olarak döndür. Markdown veya ek açıklama ekleme.
+
+                Şu JSON formatını kullan:
+                [
+                  {
+                    "speaker": "Konuşmacı 1",
+                    "text": "Söylenen cümle"
+                  },
+                  {
+                    "speaker": "Konuşmacı 2",
+                    "text": "Diğer kişinin cevabı"
+                  }
+                ]
+
+                Kurallar:
+                - Ses tonu ve konuşma sırasına göre kişileri "Konuşmacı 1", "Konuşmacı 2" şeklinde numaralandır.
+                - Konuşma içinde kişinin adı açıkça geçiyorsa (örneğin "Ben Ahmet" diyorsa) o kişi için "Ahmet (Konuşmacı 1)" etiketini kullan.
+                - Aynı kişi konuşmaya devam ediyorsa veya çok kısa bir duraksama yaptıysa konuşmacıyı değiştirme.
+                - Konuşmacının değiştiğinden emin olmadıkça mevcut konuşmacıyı devam ettir.
+                - Sadece ses kaydında gerçekten söylenen sözleri yaz, yorum ekleme.
+                """;
+
+        Map<String, Object> textPart = Map.of("text", promptText);
 
         Map<String, Object> requestBody = Map.of(
                 "contents", List.of(
                         Map.of(
                                 "parts", List.of(textPart, audioPart)
                         )
+                ),
+                "generationConfig", Map.of(
+                        "responseMimeType", "application/json"
                 )
         );
 
@@ -241,7 +272,7 @@ public class GeminiService {
 
         JsonNode root = objectMapper.readTree(response.body());
 
-        String transcript = root.path("candidates")
+        String transcriptJson = root.path("candidates")
                 .path(0)
                 .path("content")
                 .path("parts")
@@ -249,10 +280,16 @@ public class GeminiService {
                 .path("text")
                 .asText();
 
-        if (transcript.isBlank()) {
+        if (transcriptJson.isBlank()) {
             throw new RuntimeException("Gemini ses kaydından metin üretemedi.");
         }
 
-        return transcript;
+        // Geçerli bir JSON dizisi döndüğünü doğrula
+        JsonNode parsedNode = objectMapper.readTree(transcriptJson);
+        if (!parsedNode.isArray() || parsedNode.isEmpty()) {
+            throw new RuntimeException("Gemini konuşmacı ayrıştırma formatı geçersiz döndü.");
+        }
+
+        return transcriptJson;
     }
 }

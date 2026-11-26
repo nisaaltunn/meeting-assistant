@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { API_URL } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { saveMeeting } from '../services/meetingService';
@@ -20,8 +20,6 @@ import {
 
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { File } from 'expo-file-system';
-import { fetch } from 'expo/fetch';
 import * as DocumentPicker from 'expo-document-picker';
 
 import {
@@ -33,6 +31,20 @@ import {
 
 import colors from '../theme/colors';
 
+interface TranscriptSegment {
+  speaker: string;
+  text: string;
+}
+
+const SPEAKER_PALETTE = [
+  { badgeBg: '#DBEAFE', text: '#1D4ED8', border: '#93C5FD' }, // Mavi
+  { badgeBg: '#DCFCE7', text: '#15803D', border: '#86EFAC' }, // Yeşil
+  { badgeBg: '#F3E8FF', text: '#7E22CE', border: '#D8B4FE' }, // Mor
+  { badgeBg: '#FFEDD5', text: '#C2410C', border: '#FDBA74' }, // Turuncu
+  { badgeBg: '#FCE7F3', text: '#BE185D', border: '#F9A8D4' }, // Pembe
+  { badgeBg: '#CCFBF1', text: '#0F766E', border: '#5EEAD4' }, // Turkuaz
+];
+
 export default function RecordScreen() {
   const [savedMeetingId, setSavedMeetingId] = useState<number | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -42,6 +54,7 @@ export default function RecordScreen() {
   const { user } = useAuth();
   const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const [audioName, setAudioName] = useState('');
+  const [audioMimeType, setAudioMimeType] = useState('audio/m4a');
 
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
@@ -50,6 +63,42 @@ export default function RecordScreen() {
   const startTimeRef = useRef<number | null>(null);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [transcript, setTranscript] = useState('');
+
+  // JSON formatındaki transkripti konuşmacı segmentlerine ayır
+  const transcriptSegments = useMemo<TranscriptSegment[] | null>(() => {
+    if (!transcript.trim()) return null;
+
+    try {
+      const parsed = JSON.parse(transcript);
+      if (
+        Array.isArray(parsed) &&
+        parsed.length > 0 &&
+        typeof parsed[0]?.speaker === 'string' &&
+        typeof parsed[0]?.text === 'string'
+      ) {
+        return parsed;
+      }
+    } catch {
+      // Düz metin formatındaysa null dönerek fallback görünümünü kullan
+    }
+    return null;
+  }, [transcript]);
+
+  // Her benzersiz konuşmacıya tutarlı bir renk eşleştir
+  const speakerColorMap = useMemo(() => {
+    const map: Record<string, (typeof SPEAKER_PALETTE)[0]> = {};
+    if (!transcriptSegments) return map;
+
+    let colorIndex = 0;
+    for (const seg of transcriptSegments) {
+      const key = seg.speaker.trim();
+      if (!map[key]) {
+        map[key] = SPEAKER_PALETTE[colorIndex % SPEAKER_PALETTE.length];
+        colorIndex++;
+      }
+    }
+    return map;
+  }, [transcriptSegments]);
 
   // Kayıt süresini hesapla
   useEffect(() => {
@@ -82,8 +131,8 @@ export default function RecordScreen() {
   const pickAudioFile = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
-        type: 'audio/*',
-        copyToCacheDirectory: true,
+        type: '*/*',
+        copyToCacheDirectory: false,
         multiple: false,
       });
 
@@ -92,9 +141,34 @@ export default function RecordScreen() {
       }
 
       const selectedFile = result.assets[0];
+      const fileNameLower = selectedFile.name.toLowerCase();
+
+      const isAudio =
+        selectedFile.mimeType?.startsWith('audio/') ||
+        fileNameLower.endsWith('.wav') ||
+        fileNameLower.endsWith('.m4a') ||
+        fileNameLower.endsWith('.mp3') ||
+        fileNameLower.endsWith('.aac') ||
+        fileNameLower.endsWith('.ogg');
+
+      if (!isAudio) {
+        Alert.alert(
+          'Geçersiz dosya',
+          'Lütfen .wav, .m4a veya .mp3 formatında bir ses dosyası seçin.'
+        );
+        return;
+      }
 
       setAudioUri(selectedFile.uri);
       setAudioName(selectedFile.name);
+      setAudioMimeType(
+        selectedFile.mimeType && selectedFile.mimeType.startsWith('audio/')
+          ? selectedFile.mimeType
+          : fileNameLower.endsWith('.wav')
+            ? 'audio/wav'
+            : 'audio/mp4'
+      );
+
       setTranscript('');
       setRecordingTime(0);
       setSavedMeetingId(null);
@@ -106,11 +180,7 @@ export default function RecordScreen() {
       );
     } catch (error) {
       console.error('Dosya seçme hatası:', error);
-
-      Alert.alert(
-        'Hata',
-        'Ses dosyası seçilemedi.'
-      );
+      Alert.alert('Hata', 'Ses dosyası seçilemedi.');
     }
   };
 
@@ -167,6 +237,7 @@ export default function RecordScreen() {
       if (uri) {
         setAudioUri(uri);
         setAudioName('Ses kaydı');
+        setAudioMimeType('audio/m4a');
 
         Alert.alert(
           'Kayıt tamamlandı',
@@ -199,61 +270,64 @@ export default function RecordScreen() {
       setIsTranscribing(true);
       setTranscript('');
 
-      // Telefonun yerel ses dosyasını File nesnesine dönüştür.
-      const audioFile = new File(audioUri);
-
-      // Dosyayı multipart/form-data olarak hazırla.
       const formData = new FormData();
-      formData.append(
-        'file',
-        audioFile,
-        audioName || 'meeting-recording.m4a'
-      );
+      formData.append('file', {
+        uri: audioUri,
+        name: audioName || 'meeting-recording.wav',
+        type: audioMimeType,
+      } as any);
 
-      console.log('Token mevcut mu:', !!user?.token);
-      const response = await fetch(
-        `${API_URL}/api/ai/transcribe`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${user?.token}`,
-          },
-          body: formData,
-        }
-      );
-      const responseText = await response.text();
+      const responseData: any = await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', `${API_URL}/api/ai/transcribe`);
+        xhr.setRequestHeader('Authorization', `Bearer ${user.token}`);
+        xhr.timeout = 60000;
 
-      let result: any = {};
+        xhr.onload = () => {
+          let parsed: any = {};
+          if (xhr.responseText) {
+            try {
+              parsed = JSON.parse(xhr.responseText);
+            } catch {
+              parsed = { message: xhr.responseText };
+            }
+          }
 
-      if (responseText) {
-        try {
-          result = JSON.parse(responseText);
-        } catch {
-          result = { message: responseText };
-        }
-      }
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve(parsed);
+          } else {
+            reject(
+              new Error(
+                `HTTP ${xhr.status}: ${
+                  parsed.message || 'Sunucudan hata yanıtı alındı.'
+                }`
+              )
+            );
+          }
+        };
 
-      if (!response.ok) {
-        throw new Error(
-          `HTTP ${response.status}: ${
-            result.message || 'Sunucudan hata yanıtı alındı.'
-          }`
-        );
-      }
+        xhr.onerror = () => {
+          reject(new Error('Sunucuya bağlanırken ağ hatası oluştu.'));
+        };
 
-      if (!result.transcript) {
+        xhr.ontimeout = () => {
+          reject(new Error('İstek zaman aşımına uğradı.'));
+        };
+
+        xhr.send(formData);
+      });
+
+      if (!responseData.transcript) {
         throw new Error('Backend boş bir transkripsiyon yanıtı döndürdü.');
       }
 
-      setTranscript(result.transcript);
+      setTranscript(responseData.transcript);
     } catch (error) {
       console.error('Transkripsiyon hatası:', error);
 
       Alert.alert(
         'Dönüştürme hatası',
-        error instanceof Error
-          ? error.message
-          : 'Bir hata oluştu.'
+        error instanceof Error ? error.message : 'Bir hata oluştu.'
       );
     } finally {
       setIsTranscribing(false);
@@ -552,7 +626,7 @@ export default function RecordScreen() {
 
             <View style={styles.transcriptHeader}>
               <Ionicons
-                name="document-text"
+                name="people"
                 size={22}
                 color={colors.primary}
               />
@@ -562,9 +636,52 @@ export default function RecordScreen() {
               </Text>
             </View>
 
-            <Text style={styles.transcriptText}>
-              {transcript}
-            </Text>
+            {transcriptSegments ? (
+              <View style={styles.segmentsContainer}>
+                {transcriptSegments.map((segment, index) => {
+                  const speakerTheme =
+                    speakerColorMap[segment.speaker.trim()] ||
+                    SPEAKER_PALETTE[0];
+
+                  return (
+                    <View
+                      key={index}
+                      style={[
+                        styles.segmentBubble,
+                        { borderLeftColor: speakerTheme.text },
+                      ]}
+                    >
+                      <View
+                        style={[
+                          styles.speakerBadge,
+                          {
+                            backgroundColor: speakerTheme.badgeBg,
+                            borderColor: speakerTheme.border,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.speakerName,
+                            { color: speakerTheme.text },
+                          ]}
+                        >
+                          {segment.speaker}
+                        </Text>
+                      </View>
+
+                      <Text style={styles.transcriptText}>
+                        {segment.text}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </View>
+            ) : (
+              <Text style={styles.transcriptText}>
+                {transcript}
+              </Text>
+            )}
           </View>
         )}
 
@@ -881,6 +998,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 9,
+    marginTop: 18,
     marginBottom: 14,
   },
   transcriptTitle: {
@@ -888,16 +1006,36 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: colors.text,
   },
+  segmentsContainer: {
+    gap: 12,
+  },
+  segmentBubble: {
+    backgroundColor: colors.background,
+    borderRadius: 12,
+    padding: 12,
+    borderLeftWidth: 4,
+  },
+  speakerBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginBottom: 8,
+  },
+  speakerName: {
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
   transcriptText: {
     fontSize: 14,
-    lineHeight: 23,
+    lineHeight: 22,
     color: colors.text,
   },
   saveMeetingCard: {
     backgroundColor: colors.surface,
     borderRadius: 17,
     padding: 18,
-    marginTop: 18,
     borderWidth: 1,
     borderColor: colors.border,
   },
