@@ -1,33 +1,82 @@
 package com.meetingassistant.Service;
 
-
-
-
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.HttpTimeoutException;
+import java.time.Duration;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
-import java.util.Base64;
-import org.springframework.web.multipart.MultipartFile;
+
 @Service
 public class GeminiService {
 
     @Value("${GEMINI_API_KEY}")
     private String apiKey;
 
-    private final HttpClient httpClient = HttpClient.newHttpClient();
+    private static final List<String> MODEL_CANDIDATES = List.of(
+            "gemini-3.5-flash-lite",
+            "gemini-3.8-flash",
+            "gemini-3.7-flash"
+    );
+
+    private final HttpClient httpClient = HttpClient.newBuilder()
+            .version(HttpClient.Version.HTTP_1_1)
+            .connectTimeout(Duration.ofSeconds(30))
+            .build();
+
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public String askGemini(String prompt) throws Exception {
+    private HttpResponse<String> sendWithFallback(String jsonBody, String errorPrefix) throws Exception {
+        String lastErrorBody = "";
+        int lastStatusCode = 500;
 
-        String url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent";
+        for (String model : MODEL_CANDIDATES) {
+            String url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent";
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .timeout(Duration.ofSeconds(25))
+                    .header("Content-Type", "application/json")
+                    .header("x-goog-api-key", apiKey)
+                    .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
+                    .build();
+
+            try {
+                HttpResponse<String> response = httpClient.send(
+                        request,
+                        HttpResponse.BodyHandlers.ofString()
+                );
+
+                if (response.statusCode() >= 200 && response.statusCode() < 300) {
+                    System.out.println("Başarılı yanıt alınan model: " + model);
+                    return response;
+                }
+
+                lastStatusCode = response.statusCode();
+                lastErrorBody = response.body();
+                System.out.println(model + " başarısız (" + lastStatusCode + "), sıradaki modele geçiliyor...");
+            } catch (HttpTimeoutException e) {
+                lastStatusCode = 504;
+                lastErrorBody = "Model zaman aşımına uğradı: " + model;
+                System.out.println(model + " zaman aşımına uğradı, sıradaki modele geçiliyor...");
+            }
+        }
+
+        throw new RuntimeException(
+                errorPrefix + " (" + lastStatusCode + "): " + lastErrorBody
+        );
+    }
+
+    public String askGemini(String prompt) throws Exception {
 
         Map<String, Object> requestBody = Map.of(
                 "contents", List.of(
@@ -41,24 +90,7 @@ public class GeminiService {
 
         String jsonBody = objectMapper.writeValueAsString(requestBody);
 
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .header("Content-Type", "application/json")
-                .header("x-goog-api-key", apiKey)
-                .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
-                .build();
-
-        HttpResponse<String> response = httpClient.send(
-                request,
-                HttpResponse.BodyHandlers.ofString()
-        );
-
-        if (response.statusCode() < 200 || response.statusCode() >= 300) {
-            throw new RuntimeException(
-                    "Gemini API hatası (" + response.statusCode() + "): "
-                            + response.body()
-            );
-        }
+        HttpResponse<String> response = sendWithFallback(jsonBody, "Gemini API hatası");
 
         JsonNode root = objectMapper.readTree(response.body());
 
@@ -70,7 +102,6 @@ public class GeminiService {
                 .path("text")
                 .asText();
     }
-
 
     public JsonNode analyzeMeeting(String transcript) throws Exception {
 
@@ -109,22 +140,19 @@ public class GeminiService {
             }
 
             Kurallar:
-            - Özeti Türkçe ve anlaşılır şekilde yaz.
-            - Sadece gerçekten alınmış kararları ekle.
-            - Görevleri açık ve anlaşılır yaz.
-            - Sorumlu kişi belirtilmemişse null kullan.
-            - Tarih belirtilmemişse null kullan.
-            - Konuşmacı isimleri bilinmiyorsa isim uydurma.
-            - Transkriptte açıkça ayırt edilebilen konuşmacıları listele.
-            - Konuşmacılar kesin olarak ayırt edilemiyorsa tahmin yürütme.
-            - Bilgi bulunmayan listeleri boş dizi olarak döndür.
+- Özeti Türkçe ve anlaşılır şekilde yaz.
+- Sadece gerçekten alınmış kararları ekle.
+- Görevleri açık ve anlaşılır yaz.
+- Sorumlu kişi belirtilmemişse null kullan.
+- Tarih belirtilmemişse null kullan.
+- Konuşmacı isimleri bilinmiyorsa isim uydurma.
+- Transkriptte açıkça ayırt edilebilen konuşmacıları listele.
+- Konuşmacılar kesin olarak ayırt edilemiyorsa tahmin yürütme.
+- Bilgi bulunmayan listeleri boş dizi olarak döndür.
 
             TOPLANTI TRANSKRİPTİ:
 
             """ + transcript;
-
-        String url =
-                "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent";
 
         Map<String, Object> requestBody = Map.of(
                 "contents", List.of(
@@ -141,24 +169,7 @@ public class GeminiService {
 
         String jsonBody = objectMapper.writeValueAsString(requestBody);
 
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .header("Content-Type", "application/json")
-                .header("x-goog-api-key", apiKey)
-                .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
-                .build();
-
-        HttpResponse<String> response = httpClient.send(
-                request,
-                HttpResponse.BodyHandlers.ofString()
-        );
-
-        if (response.statusCode() < 200 || response.statusCode() >= 300) {
-            throw new RuntimeException(
-                    "Gemini toplantı analiz hatası (" +
-                            response.statusCode() + "): " + response.body()
-            );
-        }
+        HttpResponse<String> response = sendWithFallback(jsonBody, "Gemini toplantı analiz hatası");
 
         JsonNode root = objectMapper.readTree(response.body());
 
@@ -183,7 +194,6 @@ public class GeminiService {
         return analysis;
     }
 
-
     public String transcribeAudio(MultipartFile audioFile) throws Exception {
 
         if (audioFile == null || audioFile.isEmpty()) {
@@ -191,7 +201,6 @@ public class GeminiService {
         }
 
         String mimeType = audioFile.getContentType();
-
         String fileName = audioFile.getOriginalFilename();
 
         if (fileName != null && fileName.toLowerCase().endsWith(".m4a")) {
@@ -228,26 +237,7 @@ public class GeminiService {
 
         String jsonBody = objectMapper.writeValueAsString(requestBody);
 
-        String url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent";
-
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .header("Content-Type", "application/json")
-                .header("x-goog-api-key", apiKey)
-                .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
-                .build();
-
-        HttpResponse<String> response = httpClient.send(
-                request,
-                HttpResponse.BodyHandlers.ofString()
-        );
-
-        if (response.statusCode() < 200 || response.statusCode() >= 300) {
-            throw new RuntimeException(
-                    "Gemini ses dönüştürme hatası (" +
-                            response.statusCode() + "): " + response.body()
-            );
-        }
+        HttpResponse<String> response = sendWithFallback(jsonBody, "Gemini ses dönüştürme hatası");
 
         JsonNode root = objectMapper.readTree(response.body());
 
@@ -265,5 +255,4 @@ public class GeminiService {
 
         return transcript;
     }
-
 }

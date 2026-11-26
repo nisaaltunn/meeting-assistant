@@ -1,4 +1,3 @@
-
 package com.meetingassistant.config;
 
 import org.springframework.context.annotation.Bean;
@@ -39,7 +38,7 @@ public class SecurityConfig {
                                 "/api/auth/change-password"
                         ).authenticated()
 
-                        .requestMatchers("/api/auth/**").permitAll()
+                        .requestMatchers("/api/auth/**", "/error").permitAll()
 
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 

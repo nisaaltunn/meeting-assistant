@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useState } from 'react';
 import { API_URL } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -79,6 +78,7 @@ export default function RecordScreen() {
       .map((value) => String(value).padStart(2, '0'))
       .join(':');
   };
+
   const pickAudioFile = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -86,34 +86,34 @@ export default function RecordScreen() {
         copyToCacheDirectory: true,
         multiple: false,
       });
-  
+
       if (result.canceled) {
         return;
       }
-  
+
       const selectedFile = result.assets[0];
-  
+
       setAudioUri(selectedFile.uri);
       setAudioName(selectedFile.name);
       setTranscript('');
       setRecordingTime(0);
       setSavedMeetingId(null);
       setAnalysis(null);
-  
+
       Alert.alert(
         'Dosya seçildi',
         `${selectedFile.name} başarıyla seçildi.`
       );
-  
     } catch (error) {
       console.error('Dosya seçme hatası:', error);
-  
+
       Alert.alert(
         'Hata',
         'Ses dosyası seçilemedi.'
       );
     }
   };
+
   // Kaydı başlat
   const startRecording = async () => {
     try {
@@ -185,184 +185,177 @@ export default function RecordScreen() {
     }
   };
 
-  
-const transcribeAudio = async () => {
-  if (!audioUri) {
-    Alert.alert('Uyarı', 'Önce bir ses kaydı yapmalısın.');
-    return;
-  }
-  if (!user?.token) {
-    Alert.alert('Hata', 'Oturum bilgisi bulunamadı.');
-    return;
-  }
+  const transcribeAudio = async () => {
+    if (!audioUri) {
+      Alert.alert('Uyarı', 'Önce bir ses kaydı yapmalısın.');
+      return;
+    }
+    if (!user?.token) {
+      Alert.alert('Hata', 'Oturum bilgisi bulunamadı.');
+      return;
+    }
 
-  
-  try {
-    setIsTranscribing(true);
-    setTranscript('');
-    
+    try {
+      setIsTranscribing(true);
+      setTranscript('');
 
-    // Telefonun yerel ses dosyasını File nesnesine dönüştür.
-    const audioFile = new File(audioUri);
+      // Telefonun yerel ses dosyasını File nesnesine dönüştür.
+      const audioFile = new File(audioUri);
 
-    // Dosyayı multipart/form-data olarak hazırla.
-    const formData = new FormData();
-    formData.append(
-      'file',
-      audioFile,
-      audioName || 'meeting-recording.m4a'
-    );
-    
-    console.log('Token mevcut mu:', !!user?.token);
-    const response = await fetch(
-      `${API_URL}/api/ai/transcribe`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${user?.token}`,
+      // Dosyayı multipart/form-data olarak hazırla.
+      const formData = new FormData();
+      formData.append(
+        'file',
+        audioFile,
+        audioName || 'meeting-recording.m4a'
+      );
+
+      console.log('Token mevcut mu:', !!user?.token);
+      const response = await fetch(
+        `${API_URL}/api/ai/transcribe`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${user?.token}`,
+          },
+          body: formData,
+        }
+      );
+      const responseText = await response.text();
+
+      let result: any = {};
+
+      if (responseText) {
+        try {
+          result = JSON.parse(responseText);
+        } catch {
+          result = { message: responseText };
+        }
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          `HTTP ${response.status}: ${
+            result.message || 'Sunucudan hata yanıtı alındı.'
+          }`
+        );
+      }
+
+      if (!result.transcript) {
+        throw new Error('Backend boş bir transkripsiyon yanıtı döndürdü.');
+      }
+
+      setTranscript(result.transcript);
+    } catch (error) {
+      console.error('Transkripsiyon hatası:', error);
+
+      Alert.alert(
+        'Dönüştürme hatası',
+        error instanceof Error
+          ? error.message
+          : 'Bir hata oluştu.'
+      );
+    } finally {
+      setIsTranscribing(false);
+    }
+  };
+
+  const handleAnalyzeMeeting = async () => {
+    if (!savedMeetingId) {
+      Alert.alert('Uyarı', 'Önce toplantıyı kaydetmelisin.');
+      return;
+    }
+
+    if (!user?.token) {
+      Alert.alert('Hata', 'Oturum bilgisi bulunamadı.');
+      return;
+    }
+
+    try {
+      setIsAnalyzing(true);
+      setAnalysis(null);
+
+      const result = await analyzeMeeting(
+        savedMeetingId,
+        user.token
+      );
+
+      setAnalysis(result.analysis);
+
+      Alert.alert(
+        'Başarılı',
+        'Toplantı Gemini tarafından analiz edildi.'
+      );
+    } catch (error) {
+      console.error('Toplantı analiz hatası:', error);
+
+      Alert.alert(
+        'Analiz Hatası',
+        error instanceof Error
+          ? error.message
+          : 'Toplantı analiz edilemedi.'
+      );
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  const handleSaveMeeting = async () => {
+    if (!transcript.trim()) {
+      Alert.alert('Uyarı', 'Önce ses kaydını metne dönüştürmelisin.');
+      return;
+    }
+
+    if (!meetingTitle.trim()) {
+      Alert.alert('Uyarı', 'Lütfen toplantı başlığını gir.');
+      return;
+    }
+
+    if (!user?.token) {
+      Alert.alert('Hata', 'Oturum bilgisi bulunamadı.');
+      return;
+    }
+
+    try {
+      setIsSaving(true);
+
+      const savedMeeting: any = await saveMeeting(
+        {
+          title: meetingTitle.trim(),
+          transcript,
+          durationSeconds: recordingTime,
         },
-        body: formData,
-      }
-    );
-    const responseText = await response.text();
-
-    let result: any = {};
-    
-    if (responseText) {
-      try {
-        result = JSON.parse(responseText);
-      } catch {
-        result = { message: responseText };
-      }
-    }
-    
-    if (!response.ok) {
-      throw new Error(
-        `HTTP ${response.status}: ${
-          result.message || 'Sunucudan hata yanıtı alındı.'
-        }`
+        user.token
       );
-    }
-    
-    if (!result.transcript) {
-      throw new Error('Backend boş bir transkripsiyon yanıtı döndürdü.');
-    }
-    
-    setTranscript(result.transcript);
-    if (!response.ok) {
-      throw new Error(
-        result.message || 'Ses metne dönüştürülemedi.'
+
+      const newMeetingId =
+        savedMeeting?.id ??
+        savedMeeting?.meetingId ??
+        savedMeeting?.meeting?.id ??
+        null;
+
+      if (!newMeetingId) {
+        console.error('Sunucu yanıtından toplantı ID okunamadı:', savedMeeting);
+        Alert.alert('Hata', 'Toplantı kaydedildi ancak ID bilgisi alınamadı.');
+        return;
+      }
+
+      setSavedMeetingId(newMeetingId);
+      setAnalysis(null);
+
+      Alert.alert('Başarılı', 'Toplantın başarıyla kaydedildi.');
+      setMeetingTitle('');
+    } catch (error) {
+      console.error('Toplantı kaydetme hatası:', error);
+
+      Alert.alert(
+        'Hata',
+        error instanceof Error ? error.message : 'Toplantı kaydedilemedi.'
       );
+    } finally {
+      setIsSaving(false);
     }
-
-    if (!result.transcript) {
-      throw new Error('Gemini boş bir yanıt döndürdü.');
-    }
-
-    setTranscript(result.transcript);
-
-  } catch (error) {
-    console.error('Transkripsiyon hatası:', error);
-
-    Alert.alert(
-      'Dönüştürme hatası',
-      error instanceof Error
-        ? error.message
-        : 'Bir hata oluştu.'
-    );
-  } finally {
-    setIsTranscribing(false);
-  }
-};
-
-const handleAnalyzeMeeting = async () => {
-  if (!savedMeetingId) {
-    Alert.alert('Uyarı', 'Önce toplantıyı kaydetmelisin.');
-    return;
-  }
-
-  if (!user?.token) {
-    Alert.alert('Hata', 'Oturum bilgisi bulunamadı.');
-    return;
-  }
-
-  try {
-    setIsAnalyzing(true);
-    setAnalysis(null);
-
-    const result = await analyzeMeeting(
-      savedMeetingId,
-      user.token
-    );
-
-    setAnalysis(result.analysis);
-
-    Alert.alert(
-      'Başarılı',
-      'Toplantı Gemini tarafından analiz edildi.'
-    );
-
-  } catch (error) {
-    console.error('Toplantı analiz hatası:', error);
-
-    Alert.alert(
-      'Analiz Hatası',
-      error instanceof Error
-        ? error.message
-        : 'Toplantı analiz edilemedi.'
-    );
-  } finally {
-    setIsAnalyzing(false);
-  }
-};
-
-const handleSaveMeeting = async () => {
-  if (!transcript.trim()) {
-    Alert.alert('Uyarı', 'Önce ses kaydını metne dönüştürmelisin.');
-    return;
-  }
-
-  if (!meetingTitle.trim()) {
-    Alert.alert('Uyarı', 'Lütfen toplantı başlığını gir.');
-    return;
-  }
-
-  if (!user?.token) {
-    Alert.alert('Hata', 'Oturum bilgisi bulunamadı.');
-    return;
-  }
-
-  try {
-    setIsSaving(true);
-
-    const savedMeeting = await saveMeeting(
-      {
-        title: meetingTitle.trim(),
-        transcript,
-        durationSeconds: recordingTime,
-      },
-      user.token
-    );
-
-    setSavedMeetingId(savedMeeting.id);
-    setAnalysis(null);
-
-    Alert.alert('Başarılı', 'Toplantın başarıyla kaydedildi.');
-    setMeetingTitle('');
-
-  } catch (error) {
-    console.error('Toplantı kaydetme hatası:', error);
-
-    Alert.alert(
-      'Hata',
-      error instanceof Error ? error.message : 'Toplantı kaydedilemedi.'
-    );
-  } finally {
-    setIsSaving(false);
-  }
-};
-
-
+  };
 
   const handleRecording = () => {
     if (isRecording) {
@@ -461,198 +454,197 @@ const handleSaveMeeting = async () => {
             </View>
           </View>
         )}
-{audioUri && (
-  <TouchableOpacity
-    style={[
-      styles.recordButton,
-      {
-        marginTop: 15,
-        opacity: isTranscribing ? 0.6 : 1,
-      },
-    ]}
-    activeOpacity={0.8}
-    onPress={transcribeAudio}
-    disabled={isTranscribing}
-  >
-    <Ionicons
-      name="document-text-outline"
-      size={22}
-      color="#FFFFFF"
-    />
 
-    <Text style={styles.buttonText}>
-      {isTranscribing
-        ? 'Konuşma metne çevriliyor...'
-        : 'Gemini ile Metne Dönüştür'}
-    </Text>
-  </TouchableOpacity>
-)}
-{transcript !== '' && (
-  <View style={styles.transcriptCard}>
-    {transcript !== '' && (
-  <View style={styles.saveMeetingCard}>
-    <Text style={styles.saveMeetingTitle}>
-      Toplantıyı Kaydet
-    </Text>
+        {audioUri && (
+          <TouchableOpacity
+            style={[
+              styles.recordButton,
+              {
+                marginTop: 15,
+                opacity: isTranscribing ? 0.6 : 1,
+              },
+            ]}
+            activeOpacity={0.8}
+            onPress={transcribeAudio}
+            disabled={isTranscribing}
+          >
+            <Ionicons
+              name="document-text-outline"
+              size={22}
+              color="#FFFFFF"
+            />
 
-    <Text style={styles.saveMeetingDescription}>
-      Toplantına bir başlık vererek kayıtlarına ekleyebilirsin.
-    </Text>
+            <Text style={styles.buttonText}>
+              {isTranscribing
+                ? 'Konuşma metne çevriliyor...'
+                : 'Gemini ile Metne Dönüştür'}
+            </Text>
+          </TouchableOpacity>
+        )}
 
-    <TextInput
-      style={styles.titleInput}
-      placeholder="Örn. Haftalık proje toplantısı"
-      placeholderTextColor={colors.secondaryText}
-      value={meetingTitle}
-      onChangeText={setMeetingTitle}
-    />
+        {transcript !== '' && (
+          <View style={styles.transcriptCard}>
+            <View style={styles.saveMeetingCard}>
+              <Text style={styles.saveMeetingTitle}>
+                Toplantıyı Kaydet
+              </Text>
 
-    <TouchableOpacity
-      style={[
-        styles.recordButton,
-        {
-          marginTop: 12,
-          opacity: isSaving ? 0.6 : 1,
-        },
-      ]}
-      onPress={handleSaveMeeting}
-      disabled={isSaving}
-    >
-      <Ionicons
-        name="save-outline"
-        size={21}
-        color="#FFFFFF"
-      />
+              <Text style={styles.saveMeetingDescription}>
+                Toplantına bir başlık vererek kayıtlarına ekleyebilirsin.
+              </Text>
 
-      <Text style={styles.buttonText}>
-        {isSaving ? 'Kaydediliyor...' : 'Toplantıyı Kaydet'}
-      </Text>
-    </TouchableOpacity>
-  </View>
-  
-)}
+              <TextInput
+                style={styles.titleInput}
+                placeholder="Örn. Haftalık proje toplantısı"
+                placeholderTextColor={colors.secondaryText}
+                value={meetingTitle}
+                onChangeText={setMeetingTitle}
+              />
 
-{savedMeetingId !== null && (
-  <TouchableOpacity
-    style={[
-      styles.recordButton,
-      {
-        marginTop: 12,
-        opacity: isAnalyzing ? 0.6 : 1,
-      },
-    ]}
-    onPress={handleAnalyzeMeeting}
-    disabled={isAnalyzing}
-  >
-    <Ionicons
-      name="sparkles"
-      size={21}
-      color="#FFFFFF"
-    />
+              <TouchableOpacity
+                style={[
+                  styles.recordButton,
+                  {
+                    marginTop: 12,
+                    opacity: isSaving ? 0.6 : 1,
+                  },
+                ]}
+                onPress={handleSaveMeeting}
+                disabled={isSaving}
+              >
+                <Ionicons
+                  name="save-outline"
+                  size={21}
+                  color="#FFFFFF"
+                />
 
-    <Text style={styles.buttonText}>
-      {isAnalyzing
-        ? 'Gemini analiz ediyor...'
-        : 'Gemini ile Toplantıyı Analiz Et'}
-    </Text>
-  </TouchableOpacity>
-)}
-    <View style={styles.transcriptHeader}>
-      <Ionicons
-        name="document-text"
-        size={22}
-        color={colors.primary}
-      />
+                <Text style={styles.buttonText}>
+                  {isSaving ? 'Kaydediliyor...' : 'Toplantıyı Kaydet'}
+                </Text>
+              </TouchableOpacity>
+            </View>
 
-      <Text style={styles.transcriptTitle}>
-        Konuşma Metni
-      </Text>
-    </View>
+            {savedMeetingId !== null && (
+              <TouchableOpacity
+                style={[
+                  styles.recordButton,
+                  {
+                    marginTop: 12,
+                    opacity: isAnalyzing ? 0.6 : 1,
+                  },
+                ]}
+                onPress={handleAnalyzeMeeting}
+                disabled={isAnalyzing}
+              >
+                <Ionicons
+                  name="sparkles"
+                  size={21}
+                  color="#FFFFFF"
+                />
 
-    <Text style={styles.transcriptText}>
-      {transcript}
-    </Text>
-  </View>
-  
-)}
+                <Text style={styles.buttonText}>
+                  {isAnalyzing
+                    ? 'Gemini analiz ediyor...'
+                    : 'Gemini ile Toplantıyı Analiz Et'}
+                </Text>
+              </TouchableOpacity>
+            )}
 
-{analysis && (
-  <View style={styles.analysisCard}>
-    <View style={styles.analysisHeader}>
-      <Ionicons
-        name="sparkles"
-        size={23}
-        color={colors.primary}
-      />
-      <Text style={styles.analysisTitle}>
-        Gemini Toplantı Analizi
-      </Text>
-    </View>
+            <View style={styles.transcriptHeader}>
+              <Ionicons
+                name="document-text"
+                size={22}
+                color={colors.primary}
+              />
 
-    <Text style={styles.analysisSectionTitle}>
-      Toplantı Özeti
-    </Text>
-    <Text style={styles.analysisText}>
-      {analysis.summary}
-    </Text>
+              <Text style={styles.transcriptTitle}>
+                Konuşma Metni
+              </Text>
+            </View>
 
-    <Text style={styles.analysisSectionTitle}>
-      Alınan Kararlar
-    </Text>
+            <Text style={styles.transcriptText}>
+              {transcript}
+            </Text>
+          </View>
+        )}
 
-    {analysis.decisions.length > 0 ? (
-      analysis.decisions.map((item, index) => (
-        <Text key={index} style={styles.analysisText}>
-          {index + 1}. {item}
-        </Text>
-      ))
-    ) : (
-      <Text style={styles.analysisText}>
-        Henüz karar bulunamadı.
-      </Text>
-    )}
+        {analysis && (
+          <View style={styles.analysisCard}>
+            <View style={styles.analysisHeader}>
+              <Ionicons
+                name="sparkles"
+                size={23}
+                color={colors.primary}
+              />
+              <Text style={styles.analysisTitle}>
+                Gemini Toplantı Analizi
+              </Text>
+            </View>
 
-    <Text style={styles.analysisSectionTitle}>
-      Yapılacak Görevler
-    </Text>
+            <Text style={styles.analysisSectionTitle}>
+              Toplantı Özeti
+            </Text>
+            <Text style={styles.analysisText}>
+              {analysis.summary}
+            </Text>
 
-    {analysis.tasks.length > 0 ? (
-      analysis.tasks.map((item, index) => (
-        <View key={index} style={styles.analysisItem}>
-          <Text style={styles.analysisText}>
-            {index + 1}. {item.description}
-          </Text>
-          <Text style={styles.analysisSubText}>
-            Sorumlu: {item.responsiblePerson || 'Belirtilmedi'}
-          </Text>
-          <Text style={styles.analysisSubText}>
-            Son tarih: {item.deadline || 'Belirtilmedi'}
-          </Text>
-        </View>
-      ))
-    ) : (
-      <Text style={styles.analysisText}>
-        Henüz görev bulunamadı.
-      </Text>
-    )}
+            <Text style={styles.analysisSectionTitle}>
+              Alınan Kararlar
+            </Text>
 
-    <Text style={styles.analysisSectionTitle}>
-      Katılımcılar
-    </Text>
+            {analysis.decisions.length > 0 ? (
+              analysis.decisions.map((item, index) => (
+                <Text key={index} style={styles.analysisText}>
+                  {index + 1}. {item}
+                </Text>
+              ))
+            ) : (
+              <Text style={styles.analysisText}>
+                Henüz karar bulunamadı.
+              </Text>
+            )}
 
-    {analysis.participants.length > 0 ? (
-      analysis.participants.map((item, index) => (
-        <Text key={index} style={styles.analysisText}>
-          {item.speakerLabel}: {item.name || 'İsim belirtilmedi'}
-        </Text>
-      ))
-    ) : (
-      <Text style={styles.analysisText}>
-        Katılımcı bilgisi bulunamadı.
-      </Text>
-    )}
-  </View>
-)}
+            <Text style={styles.analysisSectionTitle}>
+              Yapılacak Görevler
+            </Text>
+
+            {analysis.tasks.length > 0 ? (
+              analysis.tasks.map((item, index) => (
+                <View key={index} style={styles.analysisItem}>
+                  <Text style={styles.analysisText}>
+                    {index + 1}. {item.description}
+                  </Text>
+                  <Text style={styles.analysisSubText}>
+                    Sorumlu: {item.responsiblePerson || 'Belirtilmedi'}
+                  </Text>
+                  <Text style={styles.analysisSubText}>
+                    Son tarih: {item.deadline || 'Belirtilmedi'}
+                  </Text>
+                </View>
+              ))
+            ) : (
+              <Text style={styles.analysisText}>
+                Henüz görev bulunamadı.
+              </Text>
+            )}
+
+            <Text style={styles.analysisSectionTitle}>
+              Katılımcılar
+            </Text>
+
+            {analysis.participants.length > 0 ? (
+              analysis.participants.map((item, index) => (
+                <Text key={index} style={styles.analysisText}>
+                  {item.speakerLabel}: {item.name || 'İsim belirtilmedi'}
+                </Text>
+              ))
+            ) : (
+              <Text style={styles.analysisText}>
+                Katılımcı bilgisi bulunamadı.
+              </Text>
+            )}
+          </View>
+        )}
 
         <View style={styles.uploadSection}>
           <Text style={styles.sectionTitle}>
@@ -885,20 +877,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  
   transcriptHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 9,
     marginBottom: 14,
   },
-  
   transcriptTitle: {
     fontSize: 16,
     fontWeight: 'bold',
     color: colors.text,
   },
-  
   transcriptText: {
     fontSize: 14,
     lineHeight: 23,
@@ -912,20 +901,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  
   saveMeetingTitle: {
     fontSize: 17,
     fontWeight: 'bold',
     color: colors.text,
   },
-  
   saveMeetingDescription: {
     fontSize: 13,
     color: colors.secondaryText,
     marginTop: 7,
     marginBottom: 15,
   },
-  
   titleInput: {
     borderWidth: 1,
     borderColor: colors.border,
@@ -943,20 +929,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-
   analysisHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 9,
     marginBottom: 18,
   },
-
   analysisTitle: {
     fontSize: 17,
     fontWeight: 'bold',
     color: colors.text,
   },
-
   analysisSectionTitle: {
     fontSize: 15,
     fontWeight: 'bold',
@@ -964,21 +947,18 @@ const styles = StyleSheet.create({
     marginTop: 16,
     marginBottom: 8,
   },
-
   analysisText: {
     fontSize: 14,
     lineHeight: 22,
     color: colors.text,
     marginBottom: 6,
   },
-
   analysisItem: {
     marginBottom: 12,
     padding: 12,
     backgroundColor: colors.background,
     borderRadius: 12,
   },
-
   analysisSubText: {
     fontSize: 12,
     color: colors.secondaryText,
